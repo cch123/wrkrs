@@ -1,9 +1,29 @@
 use futures::executor::LocalPool;
 use futures::task::SpawnExt;
+use async_std::net::{TcpStream};
+use std::net::SocketAddr;
+use async_std::io;//::{self};
+
+async fn connect(addr: &SocketAddr) -> io::Result<TcpStream> {
+    match TcpStream::connect(addr).await {
+        Ok(stream) => {
+            //debug!("connected to {}", addr);
+            Ok(stream)
+        }
+        Err(e) => {
+            if e.kind() != io::ErrorKind::TimedOut {
+                //error!("unknown connect error: '{}'", e);
+            }
+            Err(e)
+        }
+    }
+}
 
 fn main() {
     let thread_num = 10;
     let connection_per_thread = 10;
+    let addr = "localhost:9999";
+
     let mut thread_handle_list= vec![];
     (0..thread_num).for_each(|_|{
         let h = std::thread::spawn(move || {
@@ -14,6 +34,7 @@ fn main() {
                 spawner.spawn(async move {
                     // load test task
                     println!("{}", "internal");
+
                 });
             });
             pool.run();
