@@ -4,6 +4,8 @@ use async_std::prelude::*;
 use futures::executor::LocalPool;
 use futures::task::SpawnExt;
 use std::net::{SocketAddr, ToSocketAddrs};
+use std::time::{Duration, Instant};
+use std::thread::spawn;
 
 async fn connect(addr: &SocketAddr) -> io::Result<TcpStream> {
     match TcpStream::connect(addr).await {
@@ -34,31 +36,41 @@ User-Agent: HTTPie/1.0.2
 ";
 
     let mut thread_handle_list = vec![];
+    let start = Instant::now();
+
     (0..thread_num).for_each(|_| {
         let h = std::thread::spawn(move || {
             let mut pool = LocalPool::new();
             let spawner = pool.spawner();
             (0..connection_per_thread).for_each(|i| {
                 println!("{}", i);
+                let mut recv_bytes_total = 0;
+                let mut counter = 0;
                 spawner
                     .spawn(async move {
                         let mut read_buffer = [0u8; 1024];
                         let mut stream = connect(&addr).await.unwrap();
                         // load test task
                         // write request text here
-                        match stream.write_all(req_str).await {
-                            Ok(_) => match stream.read(&mut read_buffer).await {
-                                Ok(n) => {
-                                    println!(
-                                        "read {} bytes, {:?}",
-                                        n,
-                                        String::from_utf8(read_buffer[..n].to_vec())
-                                    );
-                                }
-                                Err(_) => {}
-                            },
-                            Err(e) => println!("{}", e),
-                        };
+                        while Instant::now() <= start + Duration::from_secs(5) {
+                            counter += 1;
+                            match stream.write_all(req_str).await {
+                                Ok(_) => match stream.read(&mut read_buffer).await {
+                                    Ok(n) => {
+                                        recv_bytes_total += n;
+                                        /*
+                                        println!(
+                                            "read {} bytes, {:?}",
+                                            n,
+                                            String::from_utf8(read_buffer[..n].to_vec())
+                                        );
+                                        */
+                                    }
+                                    Err(_) => {}
+                                },
+                                Err(e) => println!("{}", e),
+                            };
+                        }
                     })
                     .unwrap();
             });
