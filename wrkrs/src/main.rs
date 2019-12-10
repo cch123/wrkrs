@@ -5,8 +5,11 @@ use async_std::sync::channel;
 use async_std::task;
 use futures::executor::LocalPool;
 use futures::task::SpawnExt;
+use futures_timer::Delay;
 use std::net::{SocketAddr, ToSocketAddrs};
-use std::time::{Duration, Instant};
+use std::time::Duration;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
 
 async fn connect(addr: &SocketAddr) -> io::Result<TcpStream> {
     match TcpStream::connect(addr).await {
@@ -35,7 +38,6 @@ Host: localhost:9090
     let (sender, receiver) = channel(thread_num * connection_per_thread);
 
     let mut thread_handle_list = vec![];
-    let start = Instant::now();
 
     (0..thread_num).for_each(|_| {
         let sender = sender.clone();
@@ -44,30 +46,40 @@ Host: localhost:9090
             let spawner = pool.spawner();
             (0..connection_per_thread).for_each(|_| {
                 let sender = sender.clone();
-                //println!("{}", i);
-                let mut recv_bytes_total = 0;
-                let mut counter = 0;
+                let (mut recv_bytes_total, mut counter) = (0, 0);
+                let stopped =  Arc::new(AtomicBool::new(false));
+
+                // task
+                let stopped_clone = stopped.clone();
                 spawner
                     .spawn(async move {
                         let mut read_buffer = [0u8; 1024];
                         let mut stream = connect(&addr).await.unwrap();
-                        // load test task
-                        // write request text here
-                        let start = Instant::now();
-                        while Instant::now() <= start + Duration::from_secs(10) {
+
+                        while !stopped_clone.load(Ordering::Relaxed) {
                             counter += 1;
                             match stream.write_all(req_str).await {
                                 Ok(_) => match stream.read(&mut read_buffer).await {
                                     Ok(n) => {
                                         recv_bytes_total += n;
-                                        // println!( "read {} bytes, {:?}", n, String::from_utf8(read_buffer[..n].to_vec()) );
+                                        //println!( "read {} bytes, {:?}", n, String::from_utf8(read_buffer[..n].to_vec()) );
                                     }
                                     Err(_) => {}
                                 },
                                 Err(e) => println!("{}", e),
                             };
                         }
+                        println!("{},{}", counter, recv_bytes_total);
                         sender.send((counter, recv_bytes_total)).await;
+                    })
+                    .unwrap();
+
+                // timer
+                let stopped_clone = stopped.clone();
+                spawner
+                    .spawn(async move {
+                        Delay::new(Duration::from_secs(5)).await;
+                        stopped_clone.store(true, Ordering::Relaxed);
                     })
                     .unwrap();
             });
@@ -90,8 +102,8 @@ Host: localhost:9090
                 Some(elem) => {
                     println!("receiver {:?}", elem);
                     total_bytes += elem.1;
-                    total_requests+= elem.0;
-                },
+                    total_requests += elem.0;
+                }
                 None => {
                     println!("channel closed");
                     break;
@@ -99,7 +111,10 @@ Host: localhost:9090
             }
         }
     });
-    println!("total bytes : {};\ntotal requests : {};", total_bytes, total_requests);
+    println!(
+        "total bytes : {};\ntotal requests : {};",
+        total_bytes, total_requests
+    );
     /*
       // 看一下为什么这里会报：
       error[E0507]: cannot move out of a shared reference
