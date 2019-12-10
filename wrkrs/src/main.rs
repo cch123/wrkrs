@@ -54,7 +54,7 @@ Host: localhost:9090
                         // load test task
                         // write request text here
                         let start = Instant::now();
-                        while Instant::now() <= start + Duration::from_secs(5) {
+                        while Instant::now() <= start + Duration::from_secs(10) {
                             counter += 1;
                             match stream.write_all(req_str).await {
                                 Ok(_) => match stream.read(&mut read_buffer).await {
