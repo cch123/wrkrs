@@ -124,4 +124,19 @@ Host: localhost:9090
           h.join().unwrap();
       });
       */
+      report()
+}
+
+// https://docs.rs/signal-hook/0.1.12/signal_hook/
+fn report() {
+    /*
+    Running 5s test @ http://localhost:9090
+  10 threads and 100 connections
+  Thread Stats   Avg      Stdev     Max   +/- Stdev
+    Latency    25.38ms   64.61ms 413.27ms   89.43%
+    Req/Sec     4.81k     2.12k   11.52k    78.18%
+  26462 requests in 606.64ms, 2.83MB read
+Requests/sec:  43620.60
+Transfer/sec:      4.66MB
+    */
 }
