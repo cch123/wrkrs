@@ -1,17 +1,20 @@
-use async_std::io;
-use async_std::net::TcpStream;
-use async_std::prelude::*;
-use async_std::sync::channel;
-use async_std::task;
-use futures::executor::LocalPool;
-use futures::task::SpawnExt;
-use futures_timer::Delay;
-use std::net::{SocketAddr, ToSocketAddrs};
-use std::time::Duration;
-use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::Arc;
+use tokio::net::TcpStream;
+use tokio::prelude::*;
+use tokio::signal;
+use tokio::time::delay_for;
 
-async fn connect(addr: &SocketAddr) -> io::Result<TcpStream> {
+use std::sync::atomic::AtomicI32;
+use std::sync::{
+    atomic::{AtomicBool, Ordering},
+    Arc,
+};
+
+use futures::future::join_all;
+
+use std::time::{Duration, Instant};
+
+/*
+async fn connect(addr: &str) -> io::Result<TcpStream> {
     match TcpStream::connect(addr).await {
         Ok(stream) => {
             //debug!("connected to {}", addr);
@@ -25,118 +28,88 @@ async fn connect(addr: &SocketAddr) -> io::Result<TcpStream> {
         }
     }
 }
+*/
 
-fn main() {
-    let thread_num = 10;
-    let connection_per_thread = 10;
-    let addr = "localhost:9090".to_socket_addrs().unwrap().next().unwrap();
+#[tokio::main]
+async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let req_str = b"GET / HTTP/1.1
-Connection: keep-alive
 Host: localhost:9090
 
 ";
-    let (sender, receiver) = channel(thread_num * connection_per_thread);
+    //Connection: keep-alive
 
-    let mut thread_handle_list = vec![];
-
-    (0..thread_num).for_each(|_| {
-        let sender = sender.clone();
-        let h = std::thread::spawn(move || {
-            let mut pool = LocalPool::new();
-            let spawner = pool.spawner();
-            (0..connection_per_thread).for_each(|_| {
-                let sender = sender.clone();
-                let (mut recv_bytes_total, mut counter) = (0, 0);
-                let stopped =  Arc::new(AtomicBool::new(false));
-
-                // task
-                let stopped_clone = stopped.clone();
-                spawner
-                    .spawn(async move {
-                        let mut read_buffer = [0u8; 1024];
-                        let mut stream = connect(&addr).await.unwrap();
-
-                        while !stopped_clone.load(Ordering::Relaxed) {
-                            counter += 1;
-                            match stream.write_all(req_str).await {
-                                Ok(_) => match stream.read(&mut read_buffer).await {
-                                    Ok(n) => {
-                                        recv_bytes_total += n;
-                                        //println!( "read {} bytes, {:?}", n, String::from_utf8(read_buffer[..n].to_vec()) );
-                                    }
-                                    Err(_) => {}
-                                },
-                                Err(e) => println!("{}", e),
-                            };
-                        }
-                        println!("{},{}", counter, recv_bytes_total);
-                        sender.send((counter, recv_bytes_total)).await;
-                    })
-                    .unwrap();
-
-                // timer
-                let stopped_clone = stopped.clone();
-                spawner
-                    .spawn(async move {
-                        Delay::new(Duration::from_secs(5)).await;
-                        stopped_clone.store(true, Ordering::Relaxed);
-                    })
-                    .unwrap();
-            });
-            drop(sender);
-            pool.run();
-        });
-        thread_handle_list.push(h);
-    });
-    drop(sender);
-
-    for h in thread_handle_list {
-        h.join().unwrap();
-    }
-
-    let mut total_bytes = 0;
-    let mut total_requests = 0;
-    task::block_on(async {
-        loop {
-            match receiver.recv().await {
-                Some(elem) => {
-                    println!("receiver {:?}", elem);
-                    total_bytes += elem.1;
-                    total_requests += elem.0;
-                }
-                None => {
-                    println!("channel closed");
-                    break;
-                }
-            }
-        }
-    });
-    println!(
-        "total bytes : {};\ntotal requests : {};",
-        total_bytes, total_requests
-    );
-    /*
-      // 看一下为什么这里会报：
-      error[E0507]: cannot move out of a shared reference
-    --> src/main.rs:32:9
-      thread_handle_list.iter().for_each(|h|{
-          //h.join().unwrap();
-          h.join().unwrap();
-      });
-      */
-      report()
-}
-
-// https://docs.rs/signal-hook/0.1.12/signal_hook/
-fn report() {
-    /*
-    Running 5s test @ http://localhost:9090
-  10 threads and 100 connections
-  Thread Stats   Avg      Stdev     Max   +/- Stdev
-    Latency    25.38ms   64.61ms 413.27ms   89.43%
-    Req/Sec     4.81k     2.12k   11.52k    78.18%
-  26462 requests in 606.64ms, 2.83MB read
-Requests/sec:  43620.60
-Transfer/sec:      4.66MB
+    // Create the runtime
+    //let mut rt = Runtime::new()?;
+    /*let mut rt = runtime::Builder::new()
+    .threaded_scheduler()
+    .num_threads(15)
+    .enable_all()
+    .build()
+    .unwrap();
     */
+
+
+    let connection_num = 100i32;
+    let stopped = Arc::new(AtomicBool::new(false));
+
+    let (counter, bytes_counter) = (Arc::new(AtomicI32::new(0)), Arc::new(AtomicI32::new(0)));
+    let now = Instant::now();
+
+    // for timeout
+    let stopped_c = stopped.clone();
+    tokio::spawn(async move {
+        delay_for(Duration::from_secs(5)).await;
+        stopped_c.store(true, Ordering::SeqCst);
+    });
+
+    // for signal
+    let stopped_s = stopped.clone();
+    tokio::spawn(async move {
+        signal::ctrl_c().await.unwrap();
+        stopped_s.store(true, Ordering::SeqCst);
+    });
+
+    // for requests
+    //let (mut tx, mut rx) = mpsc::channel(connection_num);
+    let mut handles = vec![];
+
+    (0..connection_num).for_each(|_| {
+        //let tx = tx.clone();
+        let (counter, bytes_counter) = (counter.clone(), bytes_counter.clone());
+        let (mut counter_inner, mut bytes_counter_inner) = (0, 0);
+        let stopped_clone = stopped.clone();
+        let h = tokio::spawn(async move {
+            let mut read_buffer = [0u8; 1024];
+            let mut stream = TcpStream::connect("127.0.0.1:9090").await.unwrap();
+
+            while !stopped_clone.load(Ordering::SeqCst) {
+                match stream.write(req_str).await {
+                    Ok(_) => match stream.read(&mut read_buffer).await {
+                        Ok(n) => {
+                            counter_inner += 1;
+                            bytes_counter_inner += n as i32;
+                            //println!( "read {} bytes, {:?}", n, String::from_utf8(read_buffer[..n].to_vec()) );
+                        }
+                        Err(_) => {}
+                    },
+                    Err(e) => println!("{}", e),
+                };
+            }
+
+            // stats update
+            counter.fetch_add(counter_inner, Ordering::Relaxed);
+            bytes_counter.fetch_add(bytes_counter_inner, Ordering::Relaxed);
+
+        });
+        handles.push(h);
+    });
+
+    join_all(handles).await;
+
+    println!("{:?}", now.elapsed());
+
+    // 不 join 的话，其实内部的 future 们还没有运行完
+    println!("requests : {:?}; bytes : {:?}", counter, bytes_counter);
+
+    Ok(())
 }
