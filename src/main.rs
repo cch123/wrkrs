@@ -4,6 +4,7 @@ use tokio::signal;
 use tokio::time::delay_for;
 
 use std::sync::atomic::AtomicI32;
+use std::sync::atomic::AtomicI64;
 use std::sync::{
     atomic::{AtomicBool, Ordering},
     Arc,
@@ -48,11 +49,14 @@ Host: localhost:9090
     .unwrap();
     */
 
-
     let connection_num = 100i32;
     let stopped = Arc::new(AtomicBool::new(false));
 
-    let (counter, bytes_counter) = (Arc::new(AtomicI32::new(0)), Arc::new(AtomicI32::new(0)));
+    let (counter, bytes_counter, total_time) = (
+        Arc::new(AtomicI32::new(0)),
+        Arc::new(AtomicI32::new(0)),
+        Arc::new(AtomicI64::new(0)),
+    );
     let now = Instant::now();
 
     // for timeout
@@ -75,31 +79,39 @@ Host: localhost:9090
 
     (0..connection_num).for_each(|_| {
         //let tx = tx.clone();
-        let (counter, bytes_counter) = (counter.clone(), bytes_counter.clone());
+        let (counter, bytes_counter, total_time) =
+            (counter.clone(), bytes_counter.clone(), total_time.clone());
         let (mut counter_inner, mut bytes_counter_inner) = (0, 0);
         let stopped_clone = stopped.clone();
         let h = tokio::spawn(async move {
             let mut read_buffer = [0u8; 1024];
             let mut stream = TcpStream::connect("127.0.0.1:9090").await.unwrap();
 
+            let thread_start = Instant::now();
+            let (mut min_resp_time, mut max_resp_time) = (std::u128::MAX, std::u128::MIN);
             while !stopped_clone.load(Ordering::SeqCst) {
+                let request_start = Instant::now();
                 match stream.write(req_str).await {
                     Ok(_) => match stream.read(&mut read_buffer).await {
                         Ok(n) => {
                             counter_inner += 1;
                             bytes_counter_inner += n as i32;
                             //println!( "read {} bytes, {:?}", n, String::from_utf8(read_buffer[..n].to_vec()) );
+                            let elapsed = request_start.elapsed().as_micros();
+                            min_resp_time = min_resp_time.min(elapsed);
+                            max_resp_time = max_resp_time.max(elapsed);
                         }
                         Err(_) => {}
                     },
                     Err(e) => println!("{}", e),
                 };
             }
+            //println!("avg resp: {} ", (thread_start.elapsed().as_millis() as f64)/(counter_inner as f64));
 
             // stats update
             counter.fetch_add(counter_inner, Ordering::Relaxed);
             bytes_counter.fetch_add(bytes_counter_inner, Ordering::Relaxed);
-
+            total_time.fetch_add(thread_start.elapsed().as_millis() as i64, Ordering::Relaxed);
         });
         handles.push(h);
     });
@@ -107,9 +119,80 @@ Host: localhost:9090
     join_all(handles).await;
 
     println!("{:?}", now.elapsed());
+    //println!("{:?}", total_time);
 
     // 不 join 的话，其实内部的 future 们还没有运行完
-    println!("requests : {:?}; bytes : {:?}", counter, bytes_counter);
+    println!(
+        "total requests : {:?}; total bytes : {:?}",
+        counter, bytes_counter
+    );
+
+    println!(
+        "avg resp time : {:?}",
+        (total_time.load(Ordering::Relaxed) as f64) / (counter.load(Ordering::Relaxed) as f64)
+    );
+
+    println!(
+        "requests per second : {}",
+        ((counter.load(Ordering::Relaxed) as f64) / (now.elapsed().as_secs() as f64)) as i32
+    );
 
     Ok(())
 }
+
+/*
+Running 5s test @ http://localhost:9090
+  12 threads and 120 connections
+  Thread Stats   Avg      Stdev     Max   +/- Stdev
+    Latency     1.44ms  208.79us   3.67ms   80.44%
+    Req/Sec     6.96k   282.18     8.04k    77.29%
+  423744 requests in 5.10s, 45.26MB read
+Requests/sec:  83063.44
+Transfer/sec:      8.87MB
+*/
+fn report() {}
+
+/*
+Summary:
+  Total:	5.0023 secs
+  Slowest:	0.0159 secs
+  Fastest:	0.0001 secs
+  Average:	0.0007 secs
+  Requests/sec:	68062.1232
+
+  Total data:	1702340 bytes
+  Size/request:	5 bytes
+
+Response time histogram:
+  0.000 [1]	|
+  0.002 [338512]	|■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■
+  0.003 [1778]	|
+  0.005 [123]	|
+  0.006 [28]	|
+  0.008 [15]	|
+  0.010 [5]	|
+  0.011 [3]	|
+  0.013 [2]	|
+  0.014 [0]	|
+  0.016 [1]	|
+
+Latency distribution:
+  10% in 0.0005 secs
+  25% in 0.0006 secs
+  50% in 0.0007 secs
+  75% in 0.0009 secs
+  90% in 0.0010 secs
+  95% in 0.0010 secs
+  99% in 0.0015 secs
+
+Details (average, fastest, slowest):
+  DNS+dialup:	0.0000 secs, 0.0001 secs, 0.0159 secs
+  DNS-lookup:	0.0000 secs, 0.0000 secs, 0.0013 secs
+  req write:	0.0000 secs, 0.0000 secs, 0.0030 secs
+  resp wait:	0.0007 secs, 0.0001 secs, 0.0089 secs
+  resp read:	0.0000 secs, 0.0000 secs, 0.0152 secs
+
+Status code distribution:
+  [200]	340468 responses
+*/
+fn report2() {}
