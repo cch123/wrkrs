@@ -55,16 +55,11 @@ Host: localhost:9090
     .unwrap();
     */
 
-    let connection_num = 100i32;
+    let connection_num = 32i32;
     let stopped = Arc::new(AtomicBool::new(false));
 
-    /*
-    let (counter, bytes_counter, total_time) = (
-        Arc::new(AtomicI32::new(0)),
-        Arc::new(AtomicI32::new(0)),
-        Arc::new(AtomicI64::new(0)),
-    );
-    */
+    println!("Running in {} connections", connection_num);
+
     let now = Instant::now();
 
     // for timeout
@@ -125,9 +120,8 @@ Host: localhost:9090
     // 不 join 的话，其实内部的 future 们还没有运行完
     join_all(handles).await;
 
-    println!("{:?}", now.elapsed());
 
-    report(resp_list_summary.lock().await);
+    report(now.elapsed(), resp_list_summary.lock().await);
 
     Ok(())
 }
@@ -195,26 +189,29 @@ Details (average, fastest, slowest):
 Status code distribution:
   [200]	340468 responses
 */
-fn report(mut resp_list: MutexGuard<Vec<Resp>>) {
+fn report(total_time : Duration, mut resp_list: MutexGuard<Vec<Resp>>) {
+    println!("Running benchmark for: \n  {:?}\n", total_time);
+
     resp_list.sort_by(|a, b| a.latency.cmp(&b.latency));
 
     println!(
-        "avg latency: {:?} ms",
+        "Latency stats:\n  avg latency : {:?} ms\n  min latency : {:?}\n  max latency : {:?}\n",
         (resp_list
             .iter()
             .map(|e| { e.latency.as_nanos() })
             .sum::<u128>()
             / 1000000u128) as f64
-            / (resp_list.len() as f64)
+            / (resp_list.len() as f64), resp_list.first().unwrap().latency, resp_list.last().unwrap().latency,
     );
+    
+    println!("Latency distribution:");
 
-    println!(
-        "min latency : {:?}, max latency : {:?}",
-        resp_list.first().unwrap().latency,
-        resp_list.last().unwrap().latency
-    );
+    let pos = vec![10, 25, 50, 75, 90, 95, 99];
+    pos.iter().for_each(|p|{
+        let idx = resp_list.len() * p / 100;
+        println!("  {}% in {:?}", p, resp_list.get(idx).unwrap().latency);
+    });
 
-    println!("total requests : {}", resp_list.len());
-    println!("avg qps : {:?}", resp_list.len() / 5);
-
+    println!("\nSummary:");
+    println!("  Total requests: {:?}  Average QPS: {:?}", resp_list.len(), resp_list.len() / 5);
 }
