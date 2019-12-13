@@ -141,6 +141,8 @@ Host: localhost:9090
 }
 
 /*
+wrk 的 report
+展示的信息其实比较 old fashion
 Running 5s test @ http://localhost:9090
   12 threads and 120 connections
   Thread Stats   Avg      Stdev     Max   +/- Stdev
@@ -153,6 +155,8 @@ Transfer/sec:      8.87MB
 fn report() {}
 
 /*
+hey 的 report
+总的统计，把请求的响应排好序以后就很简单了
 Summary:
   Total:	5.0023 secs
   Slowest:	0.0159 secs
@@ -163,6 +167,9 @@ Summary:
   Total data:	1702340 bytes
   Size/request:	5 bytes
 
+这个直方图实际上是分了 11 个 bucket
+响应延迟排好序，然后按照顺序把计数计到相应的 bucket 里就行了，没什么难度
+可以考虑用 tui-rs 来展示
 Response time histogram:
   0.000 [1]	|
   0.002 [338512]	|■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■
@@ -176,6 +183,7 @@ Response time histogram:
   0.014 [0]	|
   0.016 [1]	|
 
+请求延迟分布，看 99 分位判断系统的延迟情况
 Latency distribution:
   10% in 0.0005 secs
   25% in 0.0006 secs
@@ -185,6 +193,7 @@ Latency distribution:
   95% in 0.0010 secs
   99% in 0.0015 secs
 
+扩展的延迟展示，这个可以一并记录到请求的结构体里
 Details (average, fastest, slowest):
   DNS+dialup:	0.0000 secs, 0.0001 secs, 0.0159 secs
   DNS-lookup:	0.0000 secs, 0.0000 secs, 0.0013 secs
