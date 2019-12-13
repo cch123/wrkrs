@@ -35,6 +35,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 .default_value("12")
                 .takes_value(true), // 没有 takes_value 的话，可能会读不到
         )
+        .arg(
+            Arg::with_name("addr")
+                .short("a")
+                .help("set request address")
+                .required(true)
+                .takes_value(true)
+        )
         .get_matches();
 
     let connection_num = matches
@@ -42,6 +49,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .unwrap()
         .parse::<i32>()
         .unwrap();
+
+    let addr = matches
+        .value_of("addr")
+        .unwrap().to_string();
 
     let req_str = b"GET / HTTP/1.1
 Host: localhost:9090
@@ -76,9 +87,10 @@ Host: localhost:9090
     (0..connection_num).for_each(|_| {
         let resp_list_summary = resp_list_summary.clone();
         let stopped_clone = stopped.clone();
+        let addr = addr.clone();
         let h = tokio::spawn(async move {
             let mut read_buffer = [0u8; 1024];
-            let mut stream = TcpStream::connect("127.0.0.1:9090").await.unwrap();
+            let mut stream = TcpStream::connect(addr).await.unwrap();
 
             let mut resp_list = vec![];
 
@@ -126,18 +138,6 @@ Transfer/sec:      8.87MB
 */
 
 /*
-hey 的 report
-总的统计，把请求的响应排好序以后就很简单了
-Summary:
-  Total:	5.0023 secs
-  Slowest:	0.0159 secs
-  Fastest:	0.0001 secs
-  Average:	0.0007 secs
-  Requests/sec:	68062.1232
-
-  Total data:	1702340 bytes
-  Size/request:	5 bytes
-
 这个直方图实际上是分了 11 个 bucket
 响应延迟排好序，然后按照顺序把计数计到相应的 bucket 里就行了，没什么难度
 可以考虑用 tui-rs 来展示
@@ -154,16 +154,6 @@ Response time histogram:
   0.014 [0]	|
   0.016 [1]	|
 
-请求延迟分布，看 99 分位判断系统的延迟情况
-Latency distribution:
-  10% in 0.0005 secs
-  25% in 0.0006 secs
-  50% in 0.0007 secs
-  75% in 0.0009 secs
-  90% in 0.0010 secs
-  95% in 0.0010 secs
-  99% in 0.0015 secs
-
 扩展的延迟展示，这个可以一并记录到请求的结构体里
 Details (average, fastest, slowest):
   DNS+dialup:	0.0000 secs, 0.0001 secs, 0.0159 secs
@@ -172,8 +162,6 @@ Details (average, fastest, slowest):
   resp wait:	0.0007 secs, 0.0001 secs, 0.0089 secs
   resp read:	0.0000 secs, 0.0000 secs, 0.0152 secs
 
-Status code distribution:
-  [200]	340468 responses
 */
 fn report(total_time: Duration, mut resp_list: MutexGuard<Vec<Resp>>) {
     println!("Running benchmark for: \n  {:?}\n", total_time);
