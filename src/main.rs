@@ -1,10 +1,10 @@
 use tokio::net::TcpStream;
 use tokio::prelude::*;
 use tokio::signal;
+use tokio::sync::Mutex;
+use tokio::sync::MutexGuard;
 use tokio::time::delay_for;
 
-use std::sync::atomic::AtomicI32;
-use std::sync::atomic::AtomicI64;
 use std::sync::{
     atomic::{AtomicBool, Ordering},
     Arc,
@@ -13,6 +13,12 @@ use std::sync::{
 use futures::future::join_all;
 
 use std::time::{Duration, Instant};
+
+#[derive(Debug)]
+struct Resp {
+    latency: std::time::Duration,
+    byte_count: usize,
+}
 
 /*
 async fn connect(addr: &str) -> io::Result<TcpStream> {
@@ -52,11 +58,13 @@ Host: localhost:9090
     let connection_num = 100i32;
     let stopped = Arc::new(AtomicBool::new(false));
 
+    /*
     let (counter, bytes_counter, total_time) = (
         Arc::new(AtomicI32::new(0)),
         Arc::new(AtomicI32::new(0)),
         Arc::new(AtomicI64::new(0)),
     );
+    */
     let now = Instant::now();
 
     // for timeout
@@ -76,66 +84,50 @@ Host: localhost:9090
     // for requests
     //let (mut tx, mut rx) = mpsc::channel(connection_num);
     let mut handles = vec![];
+    let resp_list_summary = Arc::new(Mutex::new(Vec::new()));
 
     (0..connection_num).for_each(|_| {
         //let tx = tx.clone();
+        /*
         let (counter, bytes_counter, total_time) =
             (counter.clone(), bytes_counter.clone(), total_time.clone());
-        let (mut counter_inner, mut bytes_counter_inner) = (0, 0);
+            */
+        let resp_list_summary = resp_list_summary.clone();
         let stopped_clone = stopped.clone();
         let h = tokio::spawn(async move {
             let mut read_buffer = [0u8; 1024];
             let mut stream = TcpStream::connect("127.0.0.1:9090").await.unwrap();
 
-            let thread_start = Instant::now();
-            let (mut min_resp_time, mut max_resp_time) = (std::u128::MAX, std::u128::MIN);
+            let mut resp_list = vec![];
+
             while !stopped_clone.load(Ordering::SeqCst) {
                 let request_start = Instant::now();
                 match stream.write(req_str).await {
                     Ok(_) => match stream.read(&mut read_buffer).await {
                         Ok(n) => {
-                            counter_inner += 1;
-                            bytes_counter_inner += n as i32;
-                            //println!( "read {} bytes, {:?}", n, String::from_utf8(read_buffer[..n].to_vec()) );
-                            let elapsed = request_start.elapsed().as_micros();
-                            min_resp_time = min_resp_time.min(elapsed);
-                            max_resp_time = max_resp_time.max(elapsed);
+                            resp_list.push(Resp {
+                                latency: request_start.elapsed(),
+                                byte_count: n,
+                            });
                         }
                         Err(_) => {}
                     },
                     Err(e) => println!("{}", e),
                 };
             }
-            //println!("avg resp: {} ", (thread_start.elapsed().as_millis() as f64)/(counter_inner as f64));
 
             // stats update
-            counter.fetch_add(counter_inner, Ordering::Relaxed);
-            bytes_counter.fetch_add(bytes_counter_inner, Ordering::Relaxed);
-            total_time.fetch_add(thread_start.elapsed().as_millis() as i64, Ordering::Relaxed);
+            resp_list_summary.lock().await.append(&mut resp_list);
         });
         handles.push(h);
     });
 
+    // 不 join 的话，其实内部的 future 们还没有运行完
     join_all(handles).await;
 
     println!("{:?}", now.elapsed());
-    //println!("{:?}", total_time);
 
-    // 不 join 的话，其实内部的 future 们还没有运行完
-    println!(
-        "total requests : {:?}; total bytes : {:?}",
-        counter, bytes_counter
-    );
-
-    println!(
-        "avg resp time : {:?}",
-        (total_time.load(Ordering::Relaxed) as f64) / (counter.load(Ordering::Relaxed) as f64)
-    );
-
-    println!(
-        "requests per second : {}",
-        ((counter.load(Ordering::Relaxed) as f64) / (now.elapsed().as_secs() as f64)) as i32
-    );
+    report(resp_list_summary.lock().await);
 
     Ok(())
 }
@@ -152,7 +144,6 @@ Running 5s test @ http://localhost:9090
 Requests/sec:  83063.44
 Transfer/sec:      8.87MB
 */
-fn report() {}
 
 /*
 hey 的 report
@@ -204,4 +195,26 @@ Details (average, fastest, slowest):
 Status code distribution:
   [200]	340468 responses
 */
-fn report2() {}
+fn report(mut resp_list: MutexGuard<Vec<Resp>>) {
+    resp_list.sort_by(|a, b| a.latency.cmp(&b.latency));
+
+    println!(
+        "avg latency: {:?} ms",
+        (resp_list
+            .iter()
+            .map(|e| { e.latency.as_nanos() })
+            .sum::<u128>()
+            / 1000000u128) as f64
+            / (resp_list.len() as f64)
+    );
+
+    println!(
+        "min latency : {:?}, max latency : {:?}",
+        resp_list.first().unwrap().latency,
+        resp_list.last().unwrap().latency
+    );
+
+    println!("total requests : {}", resp_list.len());
+    println!("avg qps : {:?}", resp_list.len() / 5);
+
+}
