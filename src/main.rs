@@ -202,8 +202,9 @@ fn report(total_time: Duration, mut resp_list: MutexGuard<Vec<Resp>>) {
 
     println!("\nSummary:");
     println!(
-        "  Total requests: {:?}  Average QPS: {:?}",
+        "  Total Requests: {:?}  Average QPS: {:?}  Total Transfer: {:?} MB/s",
         resp_list.len(),
-        resp_list.len() / 5
+        resp_list.len() / 5,
+        resp_list.iter().map(|e|{e.byte_count}).sum::<usize>() as f64/ 5000000 as f64,
     );
 }
