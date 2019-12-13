@@ -14,7 +14,7 @@ use futures::future::join_all;
 
 use std::time::{Duration, Instant};
 
-use clap::{Arg, App, SubCommand};
+use clap::{App, Arg};
 
 #[derive(Debug)]
 struct Resp {
@@ -24,9 +24,24 @@ struct Resp {
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-//    let matches = App::new("wrk-rs").version("1.0").author("Xargin").about("bench your app");
+    let matches = App::new("wrk-rs")
+        .version("1.0")
+        .author("Xargin")
+        .about("bench your app")
+        .arg(
+            Arg::with_name("conn_num")
+                .short("c")
+                .help("set connection number")
+                .default_value("12")
+                .takes_value(true), // 没有 takes_value 的话，可能会读不到
+        )
+        .get_matches();
 
-
+    let connection_num = matches
+        .value_of("conn_num")
+        .unwrap()
+        .parse::<i32>()
+        .unwrap();
 
     let req_str = b"GET / HTTP/1.1
 Host: localhost:9090
@@ -34,7 +49,6 @@ Host: localhost:9090
 ";
     //Connection: keep-alive
 
-    let connection_num = 32i32;
     let stopped = Arc::new(AtomicBool::new(false));
 
     println!("Running in {} connections", connection_num);
@@ -92,7 +106,6 @@ Host: localhost:9090
 
     // 不 join 的话，其实内部的 future 们还没有运行完
     join_all(handles).await;
-
 
     report(now.elapsed(), resp_list_summary.lock().await);
 
@@ -162,7 +175,7 @@ Details (average, fastest, slowest):
 Status code distribution:
   [200]	340468 responses
 */
-fn report(total_time : Duration, mut resp_list: MutexGuard<Vec<Resp>>) {
+fn report(total_time: Duration, mut resp_list: MutexGuard<Vec<Resp>>) {
     println!("Running benchmark for: \n  {:?}\n", total_time);
 
     resp_list.sort_by(|a, b| a.latency.cmp(&b.latency));
@@ -174,17 +187,23 @@ fn report(total_time : Duration, mut resp_list: MutexGuard<Vec<Resp>>) {
             .map(|e| { e.latency.as_nanos() })
             .sum::<u128>()
             / 1000000u128) as f64
-            / (resp_list.len() as f64), resp_list.first().unwrap().latency, resp_list.last().unwrap().latency,
+            / (resp_list.len() as f64),
+        resp_list.first().unwrap().latency,
+        resp_list.last().unwrap().latency,
     );
-    
+
     println!("Latency distribution:");
 
     let pos = vec![10, 25, 50, 75, 90, 95, 99];
-    pos.iter().for_each(|p|{
+    pos.iter().for_each(|p| {
         let idx = resp_list.len() * p / 100;
         println!("  {}% in {:?}", p, resp_list.get(idx).unwrap().latency);
     });
 
     println!("\nSummary:");
-    println!("  Total requests: {:?}  Average QPS: {:?}", resp_list.len(), resp_list.len() / 5);
+    println!(
+        "  Total requests: {:?}  Average QPS: {:?}",
+        resp_list.len(),
+        resp_list.len() / 5
+    );
 }
