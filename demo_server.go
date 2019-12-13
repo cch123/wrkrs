@@ -6,6 +6,8 @@ import (
 	_ "net/http/pprof"
 
 	"net/http"
+//"time"
+//"math/rand"
 )
 
 func sayhello(wr http.ResponseWriter, r *http.Request) {
@@ -15,6 +17,8 @@ func sayhello(wr http.ResponseWriter, r *http.Request) {
 	//	wr.WriteHeader(1)
 	wr.Header()["Content-Type"] = []string{"application/json"}
 	//wr.Header().Set()
+//time.Sleep(time.Millisecond*time.Duration(rand.Intn(1000)))
+//time.Sleep(time.Millisecond*time.Duration((10)))
 	io.WriteString(wr, "hello")
 
 	//	panic(1)

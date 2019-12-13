@@ -40,7 +40,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 .short("a")
                 .help("set request address")
                 .required(true)
-                .takes_value(true)
+                .takes_value(true),
         )
         .get_matches();
 
@@ -50,9 +50,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .parse::<i32>()
         .unwrap();
 
-    let addr = matches
-        .value_of("addr")
-        .unwrap().to_string();
+    let addr = matches.value_of("addr").unwrap().to_string();
 
     let req_str = b"GET / HTTP/1.1
 Host: localhost:9090
@@ -142,17 +140,17 @@ Transfer/sec:      8.87MB
 响应延迟排好序，然后按照顺序把计数计到相应的 bucket 里就行了，没什么难度
 可以考虑用 tui-rs 来展示
 Response time histogram:
-  0.000 [1]	|
-  0.002 [338512]	|■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■
-  0.003 [1778]	|
-  0.005 [123]	|
-  0.006 [28]	|
-  0.008 [15]	|
-  0.010 [5]	|
-  0.011 [3]	|
-  0.013 [2]	|
-  0.014 [0]	|
-  0.016 [1]	|
+  1.000 [1]	|■
+  1.001 [48]	|■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■
+  1.002 [22]	|■■■■■■■■■■■■■■■■■■
+  1.003 [18]	|■■■■■■■■■■■■■■■
+  1.004 [6]	|■■■■■
+  1.005 [2]	|■■
+  1.006 [16]	|■■■■■■■■■■■■■
+  1.007 [18]	|■■■■■■■■■■■■■■■
+  1.008 [11]	|■■■■■■■■■
+  1.008 [36]	|■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■
+  1.009 [22]	|■■■■■■■■■■■■■■■■■■
 
 扩展的延迟展示，这个可以一并记录到请求的结构体里
 Details (average, fastest, slowest):
@@ -168,6 +166,11 @@ fn report(total_time: Duration, mut resp_list: MutexGuard<Vec<Resp>>) {
 
     resp_list.sort_by(|a, b| a.latency.cmp(&b.latency));
 
+    let (min_latency, max_latency) = (
+        resp_list.first().unwrap().latency,
+        resp_list.last().unwrap().latency,
+    );
+
     println!(
         "Latency stats:\n  avg latency : {:?} ms\n  min latency : {:?}\n  max latency : {:?}\n",
         (resp_list
@@ -176,8 +179,8 @@ fn report(total_time: Duration, mut resp_list: MutexGuard<Vec<Resp>>) {
             .sum::<u128>()
             / 1000000u128) as f64
             / (resp_list.len() as f64),
-        resp_list.first().unwrap().latency,
-        resp_list.last().unwrap().latency,
+        min_latency,
+        max_latency,
     );
 
     println!("Latency distribution:");
@@ -188,11 +191,38 @@ fn report(total_time: Duration, mut resp_list: MutexGuard<Vec<Resp>>) {
         println!("  {}% in {:?}", p, resp_list.get(idx).unwrap().latency);
     });
 
+    let mut time_gap = vec![];
+    (0..=10).for_each(|i| {
+        time_gap.push(
+            min_latency.as_nanos() + i * (max_latency.as_nanos() - min_latency.as_nanos()) / 10,
+        );
+    });
+    let mut resp_time_dist = vec![];
+    let mut cursor = 0;
+    time_gap.iter().for_each(|t| {
+        let mut counter = 0;
+        while cursor < resp_list.len() {
+            let latency = resp_list.get(cursor).unwrap().latency.as_nanos();
+            if *t >= latency {
+                counter += 1;
+                cursor += 1;
+                continue;
+            } else {
+                break;
+            }
+        }
+        resp_time_dist.push(counter)
+    });
+
+    dbg!(resp_time_dist);
+    // todo max 40 grid
+    // dist by percent
+
     println!("\nSummary:");
     println!(
         "  Total Requests: {:?}  Average QPS: {:?}  Total Transfer: {:?} MB/s",
         resp_list.len(),
         resp_list.len() / 5,
-        resp_list.iter().map(|e|{e.byte_count}).sum::<usize>() as f64/ 5000000 as f64,
+        resp_list.iter().map(|e| { e.byte_count }).sum::<usize>() as f64 / 5000000 as f64,
     );
 }
