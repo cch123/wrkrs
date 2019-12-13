@@ -14,46 +14,25 @@ use futures::future::join_all;
 
 use std::time::{Duration, Instant};
 
+use clap::{Arg, App, SubCommand};
+
 #[derive(Debug)]
 struct Resp {
     latency: std::time::Duration,
     byte_count: usize,
 }
 
-/*
-async fn connect(addr: &str) -> io::Result<TcpStream> {
-    match TcpStream::connect(addr).await {
-        Ok(stream) => {
-            //debug!("connected to {}", addr);
-            Ok(stream)
-        }
-        Err(e) => {
-            if e.kind() != io::ErrorKind::TimedOut {
-                //error!("unknown connect error: '{}'", e);
-            }
-            Err(e)
-        }
-    }
-}
-*/
-
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
+//    let matches = App::new("wrk-rs").version("1.0").author("Xargin").about("bench your app");
+
+
+
     let req_str = b"GET / HTTP/1.1
 Host: localhost:9090
 
 ";
     //Connection: keep-alive
-
-    // Create the runtime
-    //let mut rt = Runtime::new()?;
-    /*let mut rt = runtime::Builder::new()
-    .threaded_scheduler()
-    .num_threads(15)
-    .enable_all()
-    .build()
-    .unwrap();
-    */
 
     let connection_num = 32i32;
     let stopped = Arc::new(AtomicBool::new(false));
@@ -76,17 +55,11 @@ Host: localhost:9090
         stopped_s.store(true, Ordering::SeqCst);
     });
 
-    // for requests
-    //let (mut tx, mut rx) = mpsc::channel(connection_num);
     let mut handles = vec![];
     let resp_list_summary = Arc::new(Mutex::new(Vec::new()));
 
+    // for requests
     (0..connection_num).for_each(|_| {
-        //let tx = tx.clone();
-        /*
-        let (counter, bytes_counter, total_time) =
-            (counter.clone(), bytes_counter.clone(), total_time.clone());
-            */
         let resp_list_summary = resp_list_summary.clone();
         let stopped_clone = stopped.clone();
         let h = tokio::spawn(async move {

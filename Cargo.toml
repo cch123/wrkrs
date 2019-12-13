@@ -7,5 +7,9 @@ edition = "2018"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
+# async related
 tokio = { version = "0.2", features = ["full"]}
 futures = "0.3"
+
+# cli related
+clap = "2.33.0"
