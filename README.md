@@ -1,4 +1,8 @@
 # wrkrs
 
-Same level performance as wrk:
+TODO:
+
+- [ ] support multiple protocol
+- [ ] integrate tui-rs
+- [ ] customize http request
 

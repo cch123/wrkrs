@@ -1,5 +1,5 @@
 [package]
-name = "tokio_runtime"
+name = "wrkrs"
 version = "0.1.0"
 authors = ["Xargin <cao1988228@163.com>"]
 edition = "2018"
