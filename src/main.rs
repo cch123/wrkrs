@@ -54,9 +54,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let req_str = b"GET / HTTP/1.1
 Host: localhost:9090
+Connection: keep-alive
 
 ";
-    //Connection: keep-alive
 
     let stopped = Arc::new(AtomicBool::new(false));
 
@@ -122,45 +122,6 @@ Host: localhost:9090
     Ok(())
 }
 
-/*
-wrk 的 report
-展示的信息其实比较 old fashion
-Running 5s test @ http://localhost:9090
-  12 threads and 120 connections
-  Thread Stats   Avg      Stdev     Max   +/- Stdev
-    Latency     1.44ms  208.79us   3.67ms   80.44%
-    Req/Sec     6.96k   282.18     8.04k    77.29%
-  423744 requests in 5.10s, 45.26MB read
-Requests/sec:  83063.44
-Transfer/sec:      8.87MB
-*/
-
-/*
-这个直方图实际上是分了 11 个 bucket
-响应延迟排好序，然后按照顺序把计数计到相应的 bucket 里就行了，没什么难度
-可以考虑用 tui-rs 来展示
-Response time histogram:
-  1.000 [1]	|■
-  1.001 [48]	|■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■
-  1.002 [22]	|■■■■■■■■■■■■■■■■■■
-  1.003 [18]	|■■■■■■■■■■■■■■■
-  1.004 [6]	|■■■■■
-  1.005 [2]	|■■
-  1.006 [16]	|■■■■■■■■■■■■■
-  1.007 [18]	|■■■■■■■■■■■■■■■
-  1.008 [11]	|■■■■■■■■■
-  1.008 [36]	|■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■
-  1.009 [22]	|■■■■■■■■■■■■■■■■■■
-
-扩展的延迟展示，这个可以一并记录到请求的结构体里
-Details (average, fastest, slowest):
-  DNS+dialup:	0.0000 secs, 0.0001 secs, 0.0159 secs
-  DNS-lookup:	0.0000 secs, 0.0000 secs, 0.0013 secs
-  req write:	0.0000 secs, 0.0000 secs, 0.0030 secs
-  resp wait:	0.0007 secs, 0.0001 secs, 0.0089 secs
-  resp read:	0.0000 secs, 0.0000 secs, 0.0152 secs
-
-*/
 fn report(total_time: Duration, mut resp_list: MutexGuard<Vec<Resp>>) {
     println!("Running benchmark for: \n  {:?}\n", total_time);
 
@@ -172,7 +133,7 @@ fn report(total_time: Duration, mut resp_list: MutexGuard<Vec<Resp>>) {
     );
 
     println!(
-        "Latency stats:\n  avg latency : {:?} ms\n  min latency : {:?}\n  max latency : {:?}\n",
+        "Latency Stats:\n  AVG Latency : {:?} ms\n  Min Latency : {:?}\n  Max Latency : {:?}\n",
         (resp_list
             .iter()
             .map(|e| { e.latency.as_nanos() })
@@ -197,8 +158,11 @@ fn report(total_time: Duration, mut resp_list: MutexGuard<Vec<Resp>>) {
             min_latency.as_nanos() + i * (max_latency.as_nanos() - min_latency.as_nanos()) / 10,
         );
     });
+
     let mut resp_time_dist = vec![];
     let mut cursor = 0;
+    let mut max_dist_block_count = 0;
+
     time_gap.iter().for_each(|t| {
         let mut counter = 0;
         while cursor < resp_list.len() {
@@ -211,12 +175,19 @@ fn report(total_time: Duration, mut resp_list: MutexGuard<Vec<Resp>>) {
                 break;
             }
         }
+        max_dist_block_count = counter.max(max_dist_block_count);
         resp_time_dist.push(counter)
     });
 
-    dbg!(resp_time_dist);
-    // todo max 40 grid
-    // dist by percent
+    println!("\nResponse Distribution:");
+    for (idx, cnt) in resp_time_dist.iter().enumerate() {
+        println!(
+            "  {:<13}  {:<10} |{:<}",
+            format!("{:?}", Duration::from_nanos(*time_gap.get(idx).unwrap() as u64)),
+            format!("[{}]", cnt),
+            dist = "■".repeat((cnt * 40 / max_dist_block_count) as usize)
+        );
+    }
 
     println!("\nSummary:");
     println!(
