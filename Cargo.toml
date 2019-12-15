@@ -13,3 +13,4 @@ futures = "0.3"
 
 # cli related
 clap = "2.33.0"
+ansi_term = "0.12"

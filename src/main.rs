@@ -16,6 +16,9 @@ use std::time::{Duration, Instant};
 
 use clap::{App, Arg};
 
+use ansi_term::Colour::Blue;
+
+
 #[derive(Debug)]
 struct Resp {
     latency: std::time::Duration,
@@ -123,7 +126,7 @@ Connection: keep-alive
 }
 
 fn report(total_time: Duration, mut resp_list: MutexGuard<Vec<Resp>>) {
-    println!("Running benchmark for: \n  {:?}\n", total_time);
+    println!("\n{}\n  {:?}\n", Blue.paint("Running Benchmark for:"), total_time);
 
     resp_list.sort_by(|a, b| a.latency.cmp(&b.latency));
 
@@ -132,8 +135,9 @@ fn report(total_time: Duration, mut resp_list: MutexGuard<Vec<Resp>>) {
         resp_list.last().unwrap().latency,
     );
 
+    println!("{}", Blue.paint("Latency Stats:"));
     println!(
-        "Latency Stats:\n  AVG Latency : {:?} ms\n  Min Latency : {:?}\n  Max Latency : {:?}\n",
+        "  AVG Latency : {:?} ms\n  Min Latency : {:?}\n  Max Latency : {:?}\n",
         (resp_list
             .iter()
             .map(|e| { e.latency.as_nanos() })
@@ -144,7 +148,7 @@ fn report(total_time: Duration, mut resp_list: MutexGuard<Vec<Resp>>) {
         max_latency,
     );
 
-    println!("Latency distribution:");
+    println!("{}", Blue.paint("Latency Distribution:"));
 
     let pos = vec![10, 25, 50, 75, 90, 95, 99];
     pos.iter().for_each(|p| {
@@ -179,17 +183,17 @@ fn report(total_time: Duration, mut resp_list: MutexGuard<Vec<Resp>>) {
         resp_time_dist.push(counter)
     });
 
-    println!("\nResponse Distribution:");
-    for (idx, cnt) in resp_time_dist.iter().enumerate() {
+    println!("{}", Blue.paint("\nResponse Distribution:"));
+    resp_time_dist.iter().enumerate().for_each( |(idx, cnt)|{
         println!(
-            "  {:<13}  {:<10} |{:<}",
-            format!("{:?}", Duration::from_nanos(*time_gap.get(idx).unwrap() as u64)),
-            format!("[{}]", cnt),
+            "  {:<10}  {:<10} |{:<}",
+            time_cost = format!("{:?}", Duration::from_nanos(*time_gap.get(idx).unwrap() as u64)),
+            cnt = format!("[{}]", cnt),
             dist = "■".repeat((cnt * 40 / max_dist_block_count) as usize)
         );
-    }
+    });
 
-    println!("\nSummary:");
+    println!("{}", Blue.paint("\nSummary:"));
     println!(
         "  Total Requests: {:?}  Average QPS: {:?}  Total Transfer: {:?} MB/s",
         resp_list.len(),
