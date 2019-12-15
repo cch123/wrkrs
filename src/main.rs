@@ -1,23 +1,22 @@
-use tokio::net::TcpStream;
-use tokio::prelude::*;
-use tokio::signal;
-use tokio::sync::Mutex;
-use tokio::sync::MutexGuard;
-use tokio::time::delay_for;
-
-use std::sync::{
-    atomic::{AtomicBool, Ordering},
-    Arc,
-};
-
+use ansi_term::Colour::Blue;
+use clap::{App, Arg};
 use futures::future::join_all;
 
-use std::time::{Duration, Instant};
+use tokio::{
+    net::TcpStream,
+    prelude::*,
+    signal,
+    sync::{Mutex, MutexGuard},
+    time::delay_for,
+};
 
-use clap::{App, Arg};
-
-use ansi_term::Colour::Blue;
-
+use std::{
+    sync::{
+        atomic::{AtomicBool, Ordering},
+        Arc,
+    },
+    time::{Duration, Instant},
+};
 
 #[derive(Debug)]
 struct Resp {
@@ -126,7 +125,11 @@ Connection: keep-alive
 }
 
 fn report(total_time: Duration, mut resp_list: MutexGuard<Vec<Resp>>) {
-    println!("\n{}\n  {:?}\n", Blue.paint("Running Benchmark for:"), total_time);
+    println!(
+        "\n{}\n  {:?}\n",
+        Blue.paint("Running Benchmark for:"),
+        total_time
+    );
 
     resp_list.sort_by(|a, b| a.latency.cmp(&b.latency));
 
@@ -184,10 +187,13 @@ fn report(total_time: Duration, mut resp_list: MutexGuard<Vec<Resp>>) {
     });
 
     println!("{}", Blue.paint("\nResponse Distribution:"));
-    resp_time_dist.iter().enumerate().for_each( |(idx, cnt)|{
+    resp_time_dist.iter().enumerate().for_each(|(idx, cnt)| {
         println!(
             "  {:<10}  {:<10} |{:<}",
-            time_cost = format!("{:?}", Duration::from_nanos(*time_gap.get(idx).unwrap() as u64)),
+            time_cost = format!(
+                "{:?}",
+                Duration::from_nanos(*time_gap.get(idx).unwrap() as u64)
+            ),
             cnt = format!("[{}]", cnt),
             dist = "■".repeat((cnt * 40 / max_dist_block_count) as usize)
         );
