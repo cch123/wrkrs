@@ -153,10 +153,10 @@ fn report(total_time: Duration, mut resp_list: MutexGuard<Vec<Resp>>) {
 
     println!("{}", Blue.paint("Latency Distribution:"));
 
-    let pos = vec![10, 25, 50, 75, 90, 95, 99];
+    let pos : Vec<f64> = vec![10.0, 25.0, 50.0, 75.0, 90.0, 95.0, 99.0, 99.9];
     pos.iter().for_each(|p| {
-        let idx = resp_list.len() * p / 100;
-        println!("  {}% in {:?}", p, resp_list.get(idx).unwrap().latency);
+        let idx = ((resp_list.len() as f64) * p / 100.0) as usize;
+        println!("  {:4}% in {:?}", p, resp_list.get(idx).unwrap().latency);
     });
 
     let mut time_gap = vec![];
@@ -189,7 +189,7 @@ fn report(total_time: Duration, mut resp_list: MutexGuard<Vec<Resp>>) {
     println!("{}", Blue.paint("\nResponse Distribution:"));
     resp_time_dist.iter().enumerate().for_each(|(idx, cnt)| {
         println!(
-            "  {:<10}  {:<10} |{:<}",
+            "  {:<13}  {:<10} |{:<}",
             time_cost = format!(
                 "{:?}",
                 Duration::from_nanos(*time_gap.get(idx).unwrap() as u64)
